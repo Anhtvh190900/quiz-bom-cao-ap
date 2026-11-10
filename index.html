@@ -46,6 +46,9 @@
   .overlay{position:fixed;inset:0;z-index:100;background:#0b1220;color:#fff;display:none;place-items:center;text-align:center;padding:24px}
   .overlay.show{display:grid}
   .overlay .box{max-width:520px}
+  .overlay.modal{background:rgba(10,15,25,.72);color:var(--ink)}
+  .overlay.modal .box{width:min(92vw,420px)}
+  .overlay.modal h2{color:var(--ink);font-size:1.25rem}
   .overlay h2{font-size:1.6rem;color:#ffd166}
   .score{font-size:2.4rem;font-weight:800}
   .rev{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
@@ -62,6 +65,15 @@
 </head>
 <body>
 <div class="wrap" id="app"></div>
+
+<div class="overlay modal" id="confirmBox" role="dialog" aria-modal="true">
+  <div class="box card">
+    <h2>Nộp bài?</h2>
+    <p id="confirmMsg"></p>
+    <div class="row" style="justify-content:center"><button class="primary" id="yes">Nộp bài</button><button id="no">Làm tiếp</button></div>
+  </div>
+</div>
+<div id="errBanner" class="hide" style="position:fixed;left:0;right:0;bottom:0;z-index:200;background:#b4261c;color:#fff;padding:8px 12px;font-size:.85rem"></div>
 
 <div class="overlay" id="overlay" role="alertdialog" aria-live="assertive">
   <div class="box">
@@ -136,16 +148,14 @@ async function startExam(){
   state.answers = state.list.map(()=>null);
   state.cur = 0; state.violations = 0; state.secs = mins*60; state.endAt = mins ? Date.now()+mins*60000 : 0;
   state.running = true;
-  if (state.locked) await engage();
+  if (state.locked) engage();      // không chờ: một số trình duyệt (điện thoại) không bao giờ trả lời yêu cầu toàn màn hình
   render();
   state.timer = setInterval(tick, 500);
 }
 
 /* ---------- Khóa ---------- */
-async function engage(){
+function engage(){
   document.body.classList.add('locked');
-  try { await document.documentElement.requestFullscreen({navigationUI:'hide'}); } catch(e){}
-  try { if (navigator.keyboard && navigator.keyboard.lock) await navigator.keyboard.lock(['Escape','KeyW','KeyT','KeyN','F5','F11','F12']); } catch(e){}
   window.addEventListener('beforeunload', onBeforeUnload);
   document.addEventListener('fullscreenchange', onFsChange);
   document.addEventListener('visibilitychange', onVisibility);
@@ -153,23 +163,36 @@ async function engage(){
   document.addEventListener('contextmenu', stop);
   ['copy','cut','paste','dragstart','selectstart'].forEach(ev=>document.addEventListener(ev, stop));
   document.addEventListener('keydown', onKey, true);
+  try {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (req) { const p = req.call(el, {navigationUI:'hide'}); if (p && p.catch) p.catch(()=>{}); }
+  } catch(e){}
+  try {
+    if (navigator.keyboard && navigator.keyboard.lock) {
+      const p = navigator.keyboard.lock(['Escape','KeyW','KeyT','KeyN','F5','F11','F12']); if (p && p.catch) p.catch(()=>{});
+    }
+  } catch(e){}
 }
 function release(){
-  document.body.classList.remove('locked');
-  window.removeEventListener('beforeunload', onBeforeUnload);
-  document.removeEventListener('fullscreenchange', onFsChange);
-  document.removeEventListener('visibilitychange', onVisibility);
-  window.removeEventListener('blur', onBlur);
-  document.removeEventListener('contextmenu', stop);
-  ['copy','cut','paste','dragstart','selectstart'].forEach(ev=>document.removeEventListener(ev, stop));
-  document.removeEventListener('keydown', onKey, true);
-  overlay.classList.remove('show');
-  try { navigator.keyboard && navigator.keyboard.unlock && navigator.keyboard.unlock(); } catch(e){}
-  try { if (document.fullscreenElement) document.exitFullscreen(); } catch(e){}
+  const safe = (f) => { try { f(); } catch(e){} };
+  safe(()=>document.body.classList.remove('locked'));
+  safe(()=>window.removeEventListener('beforeunload', onBeforeUnload));
+  safe(()=>document.removeEventListener('fullscreenchange', onFsChange));
+  safe(()=>document.removeEventListener('visibilitychange', onVisibility));
+  safe(()=>window.removeEventListener('blur', onBlur));
+  safe(()=>document.removeEventListener('contextmenu', stop));
+  safe(()=>['copy','cut','paste','dragstart','selectstart'].forEach(ev=>document.removeEventListener(ev, stop)));
+  safe(()=>document.removeEventListener('keydown', onKey, true));
+  safe(()=>overlay.classList.remove('show'));
+  safe(()=>{ const m=$('#confirmBox'); if(m) m.classList.remove('show'); });
+  safe(()=>{ navigator.keyboard && navigator.keyboard.unlock && navigator.keyboard.unlock(); });
+  safe(()=>{ if (document.fullscreenElement && document.exitFullscreen) { const p=document.exitFullscreen(); if(p&&p.catch) p.catch(()=>{}); } });
 }
 function stop(e){ e.preventDefault(); }
 function onBeforeUnload(e){ if(state.running){ e.preventDefault(); e.returnValue=''; } }
 function onKey(e){
+  if (!e || typeof e.key !== 'string') return;
   const k = e.key.toLowerCase();
   const bad = e.key==='F12' || e.key==='F5' || e.key==='F11' || e.key==='Escape' ||
     (e.ctrlKey && ['r','u','s','p','w','t','n','f','l','a','c','v','x'].includes(k)) ||
@@ -232,24 +255,43 @@ function render(){
   </div>
   <div class="grid">${state.list.map((_,i)=>`<button data-g="${i}" class="${state.answers[i]!==null?'done':''} ${i===state.cur?'cur':''}">${i+1}</button>`).join('')}</div>
   <div class="row"><button class="primary" id="submit">Nộp bài</button><span class="muted" id="subMsg"></span></div>`;
-  document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{state.answers[state.cur]=+b.dataset.i;render();});
-  document.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{state.cur=+b.dataset.g;render();});
-  $('#prev').onclick=()=>{state.cur--;render();};
-  $('#next').onclick=()=>{state.cur++;render();};
+  document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{state.answers[state.cur]=+b.dataset.i; const y=window.scrollY; render(); window.scrollTo(0,y);});
+  document.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{state.cur=+b.dataset.g;render();window.scrollTo(0,0);});
+  $('#prev').onclick=()=>{state.cur--;render();window.scrollTo(0,0);};
+  $('#next').onclick=()=>{state.cur++;render();window.scrollTo(0,0);};
   $('#submit').onclick=askSubmit;
   tick();
 }
 function askSubmit(){
   const left = state.answers.filter(a=>a===null).length;
-  $('#subMsg').innerHTML = (left?`Còn <b>${left}</b> câu chưa làm. `:'')+`Chắc chắn nộp? <button id="yes" class="primary">Nộp</button> <button id="no">Hủy</button>`;
-  $('#yes').onclick=()=>finish(''); $('#no').onclick=()=>{$('#subMsg').textContent='';};
+  $('#confirmMsg').innerHTML = left ? `Bạn còn <b>${left}</b> câu chưa làm. Nộp bài bây giờ?` : 'Bạn đã trả lời tất cả các câu. Nộp bài?';
+  $('#confirmBox').classList.add('show');
+  $('#yes').onclick = () => { $('#confirmBox').classList.remove('show'); finish(''); };
+  $('#no').onclick = () => { $('#confirmBox').classList.remove('show'); };
 }
 
 /* ---------- Kết quả ---------- */
+function showErr(msg){
+  try { const b=$('#errBanner'); b.textContent = msg; b.classList.remove('hide'); } catch(e){}
+}
+window.addEventListener('error', (e)=>showErr('Lỗi: '+(e.message||'không rõ')));
+window.addEventListener('unhandledrejection', (e)=>showErr('Lỗi: '+((e.reason&&e.reason.message)||e.reason||'không rõ')));
+
 function finish(note){
   if(!state.running) return;
-  state.running = false; clearInterval(state.timer);
+  state.running = false;
+  try { clearInterval(state.timer); } catch(e){}
   release();
+  try { renderResult(note); }
+  catch(e){
+    showErr('Lỗi hiển thị kết quả: '+e.message);
+    const n = state.list.length, right = state.list.reduce((s,q,i)=>s+(state.answers[i]===q.a?1:0),0);
+    app.innerHTML = '<div class="card"><h1>Kết quả</h1><div class="sendbox" id="sendBox">Đang gửi kết quả cho giáo viên…</div><div class="score">'+right+'/'+n+'</div><div class="row"><button class="primary" onclick="location.reload()">Làm lại</button></div></div>';
+  }
+  window.scrollTo(0,0);
+  try { sendResult(note); } catch(e){ showErr('Lỗi gửi kết quả: '+e.message); }
+}
+function renderResult(note){
   const n = state.list.length;
   const right = state.list.reduce((s,q,i)=>s+(state.answers[i]===q.a?1:0),0);
   app.innerHTML = `
@@ -271,8 +313,6 @@ function finish(note){
       </div>`;}).join('')}
   </div>`;
   $('#again').onclick = showStart;
-  window.scrollTo(0,0);
-  sendResult(note);
 }
 
 /* ---------- Gửi kết quả về email ---------- */
@@ -288,6 +328,11 @@ function buildReport(note){
     violations: state.violations, minutes: mins, note: note||'',
     wrong: wrong.length ? wrong.join('\n') : '(không sai câu nào)'
   };
+}
+function fetchT(url, opts, ms){
+  if (typeof AbortController === 'undefined') return fetch(url, opts);
+  const ac = new AbortController(); const t = setTimeout(()=>ac.abort(), ms);
+  return fetch(url, Object.assign({}, opts, {signal: ac.signal})).finally(()=>clearTimeout(t));
 }
 async function sendResult(note){
   const box = $('#sendBox'); if(!box || state.sent) return;
@@ -305,18 +350,18 @@ async function sendResult(note){
   try {
     if (SHEET_URL) {
       // Apps Script: gửi text/plain + no-cors để tránh preflight; phản hồi bị ẩn nên coi là gửi xong nếu không lỗi mạng.
-      await fetch(SHEET_URL, {method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({name:r.name, cls:r.cls, score:r.score, percent:r.percent, violations:r.violations, minutes:r.minutes, note:r.note, wrong:r.wrong})});
+      await fetchT(SHEET_URL, {method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({name:r.name, cls:r.cls, score:r.score, percent:r.percent, violations:r.violations, minutes:r.minutes, note:r.note, wrong:r.wrong})}, 20000);
       state.sent = true; box.className='sendbox ok'; box.textContent='✔ Đã ghi kết quả vào bảng tổng hợp của giáo viên.'; return;
     }
-    const res = await fetch('https://formsubmit.co/ajax/'+RESULT_EMAIL, {
+    const res = await fetchT('https://formsubmit.co/ajax/'+RESULT_EMAIL, {
       method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
       body: JSON.stringify({
         _subject:'Kết quả quiz - '+r.name+' - '+r.cls, _template:'table', _captcha:'false',
         'Họ tên':r.name, 'Lớp':r.cls, 'Điểm':r.score+' ('+r.percent+')', 'Số lần vi phạm':r.violations,
         'Thời gian làm (phút)':r.minutes, 'Ghi chú':r.note||'-', 'Các câu sai':r.wrong
       })
-    });
+    }, 20000);
     const j = await res.json().catch(()=>({}));
     if (res.ok && String(j.success) !== 'false'){ state.sent = true; box.className='sendbox ok'; box.textContent='✔ Đã gửi kết quả cho giáo viên.'; }
     else fallback();
