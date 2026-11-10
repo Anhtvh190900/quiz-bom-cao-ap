@@ -93,6 +93,7 @@ const QUESTIONS = [{"q": "Một chu trình làm việc của động cơ diesel 
 /* ===== CẤU HÌNH KHÓA ===== */
 const MAX_VIOLATIONS = 3;   // số lần rời bài thi tối đa trước khi tự nộp bài
 const DEFAULT_MINUTES = 30; // thời gian làm bài mặc định (phút)
+const VERSION = '3';        // tăng số này mỗi lần sửa để biết người làm đang mở bản nào
 /* Nơi lưu kết quả. Ưu tiên Google Sheet: dán link Web app của Apps Script vào SHEET_URL
    (xem file huong-dan-google-sheet.md). Để trống thì gửi về email RESULT_EMAIL qua formsubmit.co. */
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxDQLInA_H2FWMuJesxztgUtN3HOPXSzfKYkNd60GWVCmJiN_3M8o6w6c-XK6rhiM1S/exec';
@@ -126,6 +127,7 @@ function showStart(){
     </div>` : `<p class="muted">Thời gian làm bài: ${DEFAULT_MINUTES} phút. Bài thi chạy toàn màn hình; rời khỏi bài ${MAX_VIOLATIONS} lần sẽ tự động nộp. Kết quả được gửi tự động cho giáo viên khi nộp bài.</p>`}
     <div class="notice">Không đóng trang hoặc chuyển sang cửa sổ khác trong lúc làm bài. Mỗi lần rời khỏi bài sẽ bị ghi nhận.</div>
     <div class="row"><button class="primary" id="btnStart">Bắt đầu làm bài</button><span id="stErr" style="color:var(--bad)"></span></div>
+    <p class="muted" style="font-size:.75rem;margin:14px 0 0">Phiên bản ${VERSION}</p>
   </div>`;
   $('#btnStart').onclick = startExam;
 }
@@ -254,7 +256,8 @@ function render(){
     </div>
   </div>
   <div class="grid">${state.list.map((_,i)=>`<button data-g="${i}" class="${state.answers[i]!==null?'done':''} ${i===state.cur?'cur':''}">${i+1}</button>`).join('')}</div>
-  <div class="row"><button class="primary" id="submit">Nộp bài</button><span class="muted" id="subMsg"></span></div>`;
+  <div class="row"><button class="primary" id="submit">Nộp bài</button><span class="muted" id="subMsg"></span></div>
+  <p class="muted" style="font-size:.75rem">Phiên bản ${VERSION}</p>`;
   document.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{state.answers[state.cur]=+b.dataset.i; const y=window.scrollY; render(); window.scrollTo(0,y);});
   document.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{state.cur=+b.dataset.g;render();window.scrollTo(0,0);});
   $('#prev').onclick=()=>{state.cur--;render();window.scrollTo(0,0);};
