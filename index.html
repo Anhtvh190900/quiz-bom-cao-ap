@@ -93,12 +93,16 @@ const QUESTIONS = [{"q": "Một chu trình làm việc của động cơ diesel 
 /* ===== CẤU HÌNH KHÓA ===== */
 const MAX_VIOLATIONS = 3;   // số lần rời bài thi tối đa trước khi tự nộp bài
 const DEFAULT_MINUTES = 45; // thời gian làm bài mặc định (phút)
-const VERSION = '7';        // tăng số này mỗi lần sửa để biết người làm đang mở bản nào
+const VERSION = '8';
+const MAX_ATTEMPTS = 3;     // số lần vào làm bài tối đa trên mỗi thiết bị (đếm bằng bộ nhớ của trình duyệt)
+const ATTEMPT_KEY = 'quiz_bom_cao_ap_attempts';
+function getAttempts(){ try { return parseInt(localStorage.getItem(ATTEMPT_KEY)||'0',10) || 0; } catch(e){ return 0; } }
+function addAttempt(){ try { const n=getAttempts()+1; localStorage.setItem(ATTEMPT_KEY, String(n)); return n; } catch(e){ return 0; } }        // tăng số này mỗi lần sửa để biết người làm đang mở bản nào
 /* Nơi lưu kết quả. Ưu tiên Google Sheet: dán link Web app của Apps Script vào SHEET_URL
    (xem file huong-dan-google-sheet.md). Để trống thì gửi về email RESULT_EMAIL qua formsubmit.co. */
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxDQLInA_H2FWMuJesxztgUtN3HOPXSzfKYkNd60GWVCmJiN_3M8o6w6c-XK6rhiM1S/exec';
 const RESULT_EMAIL = 'anht190900@gmail.com';
-const ADMIN = new URLSearchParams(location.search).has('thu'); // thêm ?thu=1 vào link để thấy tùy chọn khi thử
+const ADMIN = new URLSearchParams(location.search).get('gv') === 'bca7k29q';  // link dành cho giáo viên: ...?gv=bca7k29q // thêm ?thu=1 vào link để thấy tùy chọn khi thử
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -142,7 +146,10 @@ function showStart(){
       <label>Thời gian làm bài: <input type="number" id="optMin" min="0" max="180" value="${DEFAULT_MINUTES}"> phút (0 = không giới hạn)</label>
     </div>` : `<p class="muted">Thời gian làm bài: ${DEFAULT_MINUTES} phút. Bài thi chạy toàn màn hình; rời khỏi bài ${MAX_VIOLATIONS} lần sẽ tự động nộp. Kết quả được gửi tự động cho giáo viên khi nộp bài.</p>`}
     <div class="notice">Không đóng trang hoặc chuyển sang cửa sổ khác trong lúc làm bài. Mỗi lần rời khỏi bài sẽ bị ghi nhận.</div>
-    <div class="row"><button class="primary" id="btnStart">Bắt đầu làm bài</button><span id="stErr" style="color:var(--bad)"></span></div>
+    ${ADMIN ? '' : (getAttempts() >= MAX_ATTEMPTS
+      ? `<div class="notice" style="background:var(--badbg);color:var(--bad)">Thiết bị này đã dùng hết ${MAX_ATTEMPTS}/${MAX_ATTEMPTS} lượt làm bài. Nếu cần làm thêm, hãy liên hệ giáo viên.</div>`
+      : `<p class="muted">Số lượt còn lại trên thiết bị này: <b>${MAX_ATTEMPTS - getAttempts()}/${MAX_ATTEMPTS}</b>. Mỗi lần bấm "Bắt đầu làm bài" tính là 1 lượt.</p>`)}
+    <div class="row"><button class="primary" id="btnStart" ${(!ADMIN && getAttempts() >= MAX_ATTEMPTS)?'disabled':''}>Bắt đầu làm bài</button><span id="stErr" style="color:var(--bad)"></span></div>
     <p class="muted" style="font-size:.75rem;margin:14px 0 0">Phiên bản ${VERSION}</p>
   </div>`;
   $('#btnStart').onclick = startExam;
@@ -152,6 +159,8 @@ function showStart(){
 async function startExam(){
   const name = $('#stName').value.trim(), cls = $('#stClass').value.trim();
   if (name.length < 2 || !cls){ $('#stErr').textContent = 'Vui lòng nhập họ tên và lớp.'; return; }
+  if (!ADMIN && getAttempts() >= MAX_ATTEMPTS){ $('#stErr').textContent = 'Thiết bị này đã hết lượt làm bài.'; return; }
+  state.attempt = ADMIN ? 0 : addAttempt();   // tính 1 lượt ngay khi bắt đầu
   state.student = {name, cls};
   state.sent = false; state.startedAt = Date.now();
   state.locked = ADMIN ? $('#optLock').checked : true;
@@ -348,7 +357,8 @@ function buildReport(note){
   return {
     name: state.student.name, cls: state.student.cls,
     score: right+'/'+n, percent: Math.round(right/n*100)+'%',
-    violations: state.violations, minutes: mins, note: note||'',
+    violations: state.violations, minutes: mins,
+    note: [note||'', state.attempt ? ('Lượt '+state.attempt+'/'+MAX_ATTEMPTS+' trên thiết bị') : ''].filter(Boolean).join(' | '),
     wrong: wrong.length ? wrong.join('\n') : '(không sai câu nào)'
   };
 }
