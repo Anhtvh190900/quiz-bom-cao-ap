@@ -93,7 +93,7 @@ const QUESTIONS = [{"q": "Một chu trình làm việc của động cơ diesel 
 /* ===== CẤU HÌNH KHÓA ===== */
 const MAX_VIOLATIONS = 3;   // số lần rời bài thi tối đa trước khi tự nộp bài
 const DEFAULT_MINUTES = 30; // thời gian làm bài mặc định (phút)
-const VERSION = '3';        // tăng số này mỗi lần sửa để biết người làm đang mở bản nào
+const VERSION = '4';        // tăng số này mỗi lần sửa để biết người làm đang mở bản nào
 /* Nơi lưu kết quả. Ưu tiên Google Sheet: dán link Web app của Apps Script vào SHEET_URL
    (xem file huong-dan-google-sheet.md). Để trống thì gửi về email RESULT_EMAIL qua formsubmit.co. */
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxDQLInA_H2FWMuJesxztgUtN3HOPXSzfKYkNd60GWVCmJiN_3M8o6w6c-XK6rhiM1S/exec';
@@ -108,6 +108,22 @@ const state = {running:false, locked:true, list:[], answers:[], cur:0, violation
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 const LET = 'ABCDEFGH';
+
+/* ---------- Chẩn đoán: thêm ?debug=1 vào link để hiện nhật ký ở đáy màn hình ---------- */
+const DEBUG = new URLSearchParams(location.search).has('debug');
+const T0 = Date.now(); const dbgLog = [];
+function dbg(m){
+  dbgLog.push(((Date.now()-T0)/1000).toFixed(1)+'s '+m);
+  if (!DEBUG) return;
+  try {
+    let p = document.getElementById('dbg');
+    if (!p) { p = document.createElement('pre'); p.id='dbg';
+      p.style.cssText='position:fixed;left:0;right:0;bottom:0;max-height:34vh;overflow:auto;margin:0;padding:6px 8px;background:#111;color:#9f9;font:11px/1.3 monospace;z-index:150;white-space:pre-wrap';
+      document.body.appendChild(p); }
+    p.textContent = dbgLog.slice(-14).join('\n'); p.scrollTop = p.scrollHeight;
+  } catch(e){}
+}
+dbg('trang tai xong, phien ban '+(typeof VERSION!=='undefined'?VERSION:'?')+' ua='+navigator.userAgent.slice(0,80));
 
 /* ---------- Màn hình bắt đầu ---------- */
 function showStart(){
@@ -150,6 +166,7 @@ async function startExam(){
   state.answers = state.list.map(()=>null);
   state.cur = 0; state.violations = 0; state.secs = mins*60; state.endAt = mins ? Date.now()+mins*60000 : 0;
   state.running = true;
+  dbg('bat dau lam bai, locked='+state.locked+' phut='+mins+' fullscreenAPI='+!!(document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen));
   if (state.locked) engage();      // không chờ: một số trình duyệt (điện thoại) không bao giờ trả lời yêu cầu toàn màn hình
   render();
   state.timer = setInterval(tick, 500);
@@ -203,6 +220,7 @@ function onKey(e){
   if (bad){ e.preventDefault(); e.stopPropagation(); }
 }
 function violation(reason){
+  dbg('vi pham? '+reason+' (running='+state.running+')');
   if(!state.running || !state.locked) return;
   const now = Date.now();
   if (now - state.lastViolation < 1500) return;   // gộp các sự kiện đến cùng lúc thành 1 lần
@@ -236,6 +254,7 @@ function updateBar(){ const v=$('#viol'); if(v){ v.textContent='Vi phạm: '+sta
 
 /* ---------- Hiển thị câu hỏi ---------- */
 function render(){
+  if (!state.running) { dbg('render() bi chan vi bai da nop/chua bat dau'); return; }
   const q = state.list[state.cur], n = state.list.length;
   const answered = state.answers.filter(a=>a!==null).length;
   app.innerHTML = `
@@ -277,16 +296,18 @@ function askSubmit(){
 function showErr(msg){
   try { const b=$('#errBanner'); b.textContent = msg; b.classList.remove('hide'); } catch(e){}
 }
-window.addEventListener('error', (e)=>showErr('Lỗi: '+(e.message||'không rõ')));
-window.addEventListener('unhandledrejection', (e)=>showErr('Lỗi: '+((e.reason&&e.reason.message)||e.reason||'không rõ')));
+window.addEventListener('error', (e)=>{ dbg('LOI JS: '+(e.message||'?')+' @'+(e.lineno||'?')); showErr('Lỗi: '+(e.message||'không rõ')); });
+window.addEventListener('unhandledrejection', (e)=>{ dbg('LOI promise: '+((e.reason&&e.reason.message)||e.reason)); showErr('Lỗi: '+((e.reason&&e.reason.message)||e.reason||'không rõ')); });
 
 function finish(note){
+  dbg('finish() goi, running='+state.running+' note="'+(note||'')+'" noi goi='+(new Error().stack||'').split('\n').slice(2,4).join(' <- ').replace(/\s+/g,' ').slice(0,160));
   if(!state.running) return;
   state.running = false;
   try { clearInterval(state.timer); } catch(e){}
   release();
-  try { renderResult(note); }
+  try { renderResult(note); dbg('renderResult xong'); }
   catch(e){
+    dbg('renderResult LOI: '+e.message);
     showErr('Lỗi hiển thị kết quả: '+e.message);
     const n = state.list.length, right = state.list.reduce((s,q,i)=>s+(state.answers[i]===q.a?1:0),0);
     app.innerHTML = '<div class="card"><h1>Kết quả</h1><div class="sendbox" id="sendBox">Đang gửi kết quả cho giáo viên…</div><div class="score">'+right+'/'+n+'</div><div class="row"><button class="primary" onclick="location.reload()">Làm lại</button></div></div>';
