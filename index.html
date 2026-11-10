@@ -93,7 +93,7 @@ const QUESTIONS = [{"q": "Một chu trình làm việc của động cơ diesel 
 /* ===== CẤU HÌNH KHÓA ===== */
 const MAX_VIOLATIONS = 3;   // số lần rời bài thi tối đa trước khi tự nộp bài
 const DEFAULT_MINUTES = 45; // thời gian làm bài mặc định (phút)
-const VERSION = '6';        // tăng số này mỗi lần sửa để biết người làm đang mở bản nào
+const VERSION = '7';        // tăng số này mỗi lần sửa để biết người làm đang mở bản nào
 /* Nơi lưu kết quả. Ưu tiên Google Sheet: dán link Web app của Apps Script vào SHEET_URL
    (xem file huong-dan-google-sheet.md). Để trống thì gửi về email RESULT_EMAIL qua formsubmit.co. */
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxDQLInA_H2FWMuJesxztgUtN3HOPXSzfKYkNd60GWVCmJiN_3M8o6w6c-XK6rhiM1S/exec';
@@ -333,18 +333,9 @@ function renderResult(note){
     ${note?`<div class="notice">${esc(note)}</div>`:''}
     <div class="sendbox" id="sendBox">Đang gửi kết quả cho giáo viên…</div>
     <div class="score">${right}/${n} <span class="muted" style="font-size:1.1rem">(${Math.round(right/n*100)}%)</span></div>
-    <p class="muted">Số lần vi phạm: ${state.violations}. Đáp án đúng được tô xanh bên dưới.</p>
-    <div class="row"><button class="primary" id="again">Làm lại</button></div>
-    ${state.list.map((q,i)=>{
-      const mine = state.answers[i], ok = mine===q.a;
-      return `<div class="rev">
-        <p class="qtext">${i+1}. ${esc(q.q)} ${ok?'<span style="color:var(--ok)">✔</span>':'<span style="color:var(--bad)">✘</span>'}</p>
-        ${q.img?`<img class="qimg" src="${q.img}" alt="">`:''}
-        ${q.opts.map((o,k)=>`<div class="opt ${k===q.a?'ok':(k===mine?'bad':'')}"><span class="k">${LET[k]}</span><span>${esc(o)}${k===mine?' <i class="muted">(bạn chọn)</i>':''}</span></div>`).join('')}
-        ${mine===null?'<p class="muted">Bạn chưa trả lời câu này.</p>':''}
-      </div>`;}).join('')}
+    <p class="muted">Số lần vi phạm: ${state.violations}. Số câu đã trả lời: ${state.answers.filter(a=>a!==null).length}/${n}.</p>
+    <p class="muted">Đáp án sẽ do giáo viên công bố sau.</p>
   </div>`;
-  $('#again').onclick = showStart;
 }
 
 /* ---------- Gửi kết quả về email ---------- */
