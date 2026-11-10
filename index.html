@@ -93,7 +93,7 @@ const QUESTIONS = [{"q": "Một chu trình làm việc của động cơ diesel 
 /* ===== CẤU HÌNH KHÓA ===== */
 const MAX_VIOLATIONS = 3;   // số lần rời bài thi tối đa trước khi tự nộp bài
 const DEFAULT_MINUTES = 30; // thời gian làm bài mặc định (phút)
-const VERSION = '4';        // tăng số này mỗi lần sửa để biết người làm đang mở bản nào
+const VERSION = '5';        // tăng số này mỗi lần sửa để biết người làm đang mở bản nào
 /* Nơi lưu kết quả. Ưu tiên Google Sheet: dán link Web app của Apps Script vào SHEET_URL
    (xem file huong-dan-google-sheet.md). Để trống thì gửi về email RESULT_EMAIL qua formsubmit.co. */
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbxDQLInA_H2FWMuJesxztgUtN3HOPXSzfKYkNd60GWVCmJiN_3M8o6w6c-XK6rhiM1S/exec';
@@ -175,6 +175,8 @@ async function startExam(){
 /* ---------- Khóa ---------- */
 function engage(){
   document.body.classList.add('locked');
+  state.graceUntil = Date.now() + 5000;   // vài giây đầu: bỏ qua mọi cảnh báo (trình duyệt đang chuyển sang toàn màn hình)
+  state.wasFs = false;
   window.addEventListener('beforeunload', onBeforeUnload);
   document.addEventListener('fullscreenchange', onFsChange);
   document.addEventListener('visibilitychange', onVisibility);
@@ -223,6 +225,7 @@ function violation(reason){
   dbg('vi pham? '+reason+' (running='+state.running+')');
   if(!state.running || !state.locked) return;
   const now = Date.now();
+  if (now < (state.graceUntil||0)) { dbg('  -> bo qua (khoang cho dau bai)'); return; }
   if (now - state.lastViolation < 1500) return;   // gộp các sự kiện đến cùng lúc thành 1 lần
   state.lastViolation = now;
   state.violations++;
@@ -231,11 +234,16 @@ function violation(reason){
   $('#ovMsg').textContent = reason+' (lần '+state.violations+'/'+MAX_VIOLATIONS+'). Vi phạm lần thứ '+MAX_VIOLATIONS+' bài sẽ tự động nộp.';
   overlay.classList.add('show');
 }
-function onFsChange(){ if(state.running && !document.fullscreenElement) violation('Bạn đã thoát chế độ toàn màn hình'); }
+function onFsChange(){
+  const fs = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fs) { state.wasFs = true; state.graceUntil = Date.now() + 1500; return; }
+  if (state.running && state.wasFs) violation('Bạn đã thoát chế độ toàn màn hình');   // chỉ tính khi trước đó đã vào được toàn màn hình
+}
 function onVisibility(){ if(state.running && document.hidden) violation('Bạn đã chuyển sang cửa sổ hoặc thẻ khác'); }
-function onBlur(){ if(state.running && !document.hidden) setTimeout(()=>{ if(state.running && !document.hasFocus()) violation('Cửa sổ bài thi bị mất tiêu điểm'); },300); }
+function onBlur(){ if(state.running && !document.hidden) setTimeout(()=>{ if(state.running && !document.hasFocus()) violation('Cửa sổ bài thi bị mất tiêu điểm'); },1200); }
 $('#ovBtn').onclick = async () => {
-  try { await document.documentElement.requestFullscreen({navigationUI:'hide'}); } catch(e){}
+  state.graceUntil = Date.now() + 4000;
+  try { const el=document.documentElement; const req=el.requestFullscreen||el.webkitRequestFullscreen; if(req){ const p=req.call(el,{navigationUI:'hide'}); if(p&&p.catch) p.catch(()=>{}); } } catch(e){}
   window.focus();
   overlay.classList.remove('show');
 };
